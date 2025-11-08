@@ -1,0 +1,41 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Downtown Flood Zone",
+        "risk": "high",
+        "intensity": 0.9
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-114.0719, 51.0447]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Inglewood Risk Area",
+        "risk": "high",
+        "intensity": 0.85
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-114.0319, 51.0397]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Beltline Moderate Zone",
+        "risk": "medium",
+        "intensity": 0.6
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-114.0619, 51.0420]
+      }
+    }
+  ]
+}
