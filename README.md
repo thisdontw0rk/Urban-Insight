@@ -1,16 +1,51 @@
-# React + Vite
+# Urban Insight
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Direct
 
-Currently, two official plugins are available:
+Urban Insight is a GIS-powered web platform that visualizes sustainability and accessibility gaps across cities — helping planners and citizens make data-driven urban decisions.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Simple
 
-## React Compiler
+We make city data easy to see by turning complex maps and datasets into clear, interactive visuals anyone can explore.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Valuable
 
-## Expanding the ESLint configuration
+Our platform helps governments plan smarter, residents understand their city better, and communities become safer, more inclusive, and more resilient to climate risks.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Validated
+
+Built using real Calgary open data and GIS analysis from our geomatics teammate, our prototype already maps flood-risk zones and accessibility coverage showing clear insight into where cities can improve.
+
+## How to run locally
+
+Prerequisites:
+
+- Node.js (recommended v16+ or newer)
+- npm (bundled with Node)
+
+1. Install dependencies
+
+```bash
+npm install
+```
+
+2. Start the dev server
+
+```bash
+npm run dev
+```
+
+This project uses Vite + React + Tailwind. The `dev` script runs the Vite development server. You can also build and preview the production bundle:
+
+```bash
+npm run build
+npm run preview
+```
+
+Project layout highlights:
+
+- `index.html` — app entry
+- `src/` — React source files (e.g. `src/main.jsx`, `src/App.jsx`)
+- `vite.config.js` and `tailwindcss` are already configured
+
+If you hit issues, make sure your Node version is up to date and try removing `node_modules` and reinstalling.
