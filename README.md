@@ -1,17 +1,17 @@
-# 🌆 Urban Insight  
+# Urban Insight  
 
 ### **Empowering Smarter, Safer, and More Sustainable Cities**  
 
 ---
 
-## 🧭 Overview  
+## Overview  
 
 **Urban Insight** is a **GIS-powered web application** that visualizes sustainability, accessibility, and environmental data to support data-driven urban decision-making.  
 By combining **geomatics analysis**, **remote sensing data**, and **open city datasets**, it helps planners, researchers, and citizens understand complex urban issues through clear, interactive maps.  
 
 ---
 
-## 🌍 What It Does  
+## What It Does  
 
 - **Maps critical urban factors** such as **flood risk zones**, **crime patterns**, and **emission levels** across Calgary.  
 - Uses **high-accuracy (<1m)** georeferenced data in **EPSG:3778 (NAD83 / Alberta 3TM)** projection.  
@@ -20,7 +20,7 @@ By combining **geomatics analysis**, **remote sensing data**, and **open city da
 
 ---
 
-## 💡 Why It Matters  
+## Why It Matters  
 
 - **For Governments:** Identify infrastructure vulnerabilities and plan resilient, data-informed interventions.  
 - **For Residents:** Understand how environmental and accessibility factors impact their communities.  
@@ -28,7 +28,7 @@ By combining **geomatics analysis**, **remote sensing data**, and **open city da
 
 ---
 
-## 🧱 Tech Stack  
+## Tech Stack  
 
 | Layer | Technology | Description |
 |-------|-------------|--------------|
@@ -41,7 +41,7 @@ By combining **geomatics analysis**, **remote sensing data**, and **open city da
 
 ---
 
-## 🚀 Running the Project Locally  
+## Running the Project Locally  
 
 ### **Prerequisites**
 - Node.js **v16+**
