@@ -52,3 +52,9 @@ By combining **geomatics analysis**, **remote sensing data**, and **open city da
 1. **Install dependencies**
    ```bash
    npm install
+
+2. **Start the development server**
+   ```bash
+   npm run dev
+
+Runs a local Vite server and opens the app in your browser.
