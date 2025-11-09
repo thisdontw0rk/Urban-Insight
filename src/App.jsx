@@ -2,12 +2,10 @@ import { useState } from 'react';
 import Header from './components/Header/Header.jsx';
 import Sidebar from './components/Sidebar/Sidebar.jsx';
 import MapContainerOL from './components/Map/MapContainerOL.jsx';
-import Legend from './components/Map/Legend.jsx';
 import { fromLonLat } from 'ol/proj';
 import { Droplets, Shield, Route, Train, TreePine, AlertCircle, Circle, Map, Wind } from 'lucide-react';
 
 function App() {
-  console.log('App: Component rendering');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeLayer, setActiveLayer] = useState('community_borders');
   const [mapInstance, setMapInstance] = useState(null);
@@ -71,44 +69,6 @@ function App() {
     }
   ];
 
-  const neighborhoods = [
-    {
-      id: 1,
-      name: 'Downtown',
-      risk: 'High',
-      accessibility: 45,
-      population: 12500
-    },
-    {
-      id: 2,
-      name: 'Beltline',
-      risk: 'Medium',
-      accessibility: 62,
-      population: 18200
-    },
-    {
-      id: 3,
-      name: 'Inglewood',
-      risk: 'High',
-      accessibility: 38,
-      population: 3400
-    },
-    {
-      id: 4,
-      name: 'Kensington',
-      risk: 'Low',
-      accessibility: 78,
-      population: 5200
-    },
-    {
-      id: 5,
-      name: 'Mission',
-      risk: 'Medium',
-      accessibility: 55,
-      population: 2800
-    }
-  ];
-
   const stats = [
     { value: '23%', label: 'High Risk Areas', color: 'text-red-400' },
     { value: '67%', label: 'Accessibility Coverage', color: 'text-green-400' },
@@ -116,14 +76,8 @@ function App() {
     { value: '1.3M', label: 'Population', color: 'text-purple-400' }
   ];
 
-  const activeLayerName = layers.find(l => l.id === activeLayer)?.name || 'Community Borders';
-
   const handleLayerChange = (layerId) => {
     setActiveLayer(layerId);
-  };
-
-  const handleNeighborhoodClick = (neighborhood) => {
-    console.log('Selected neighborhood:', neighborhood);
   };
 
   const handleMapReady = (map) => {
@@ -188,8 +142,6 @@ function App() {
           layers={layers}
           activeLayer={activeLayer}
           onLayerChange={handleLayerChange}
-          neighborhoods={neighborhoods}
-          onNeighborhoodClick={handleNeighborhoodClick}
           stats={stats}
         />
         <main className="flex-1 relative" style={{ minHeight: 0 }}>
@@ -216,10 +168,7 @@ function App() {
               />
             </div>
           ) : (
-            <>
-              <MapContainerOL activeLayer={activeLayer} onMapReady={handleMapReady} />
-              <Legend activeLayerName={activeLayerName} activeLayer={activeLayer} />
-            </>
+            <MapContainerOL activeLayer={activeLayer} onMapReady={handleMapReady} />
           )}
         </main>
       </div>

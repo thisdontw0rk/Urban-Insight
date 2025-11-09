@@ -1,4 +1,6 @@
 import { Style, Stroke, Fill, Circle, Icon } from 'ol/style';
+import { getArea } from 'ol/sphere';
+import { toLonLat } from 'ol/proj';
 
 // Cache for loaded GeoJSON files to avoid re-fetching
 const geoJsonCache = new Map();
@@ -38,7 +40,7 @@ export const layerFileMap = {
   // Original layers
   flood: '/data/flood-01-chance.json', // Use flood-01-chance.json for flood risk
   accessibility: '/data/accessibility.geojson',
-  safety: '/data/safety.geojson',
+  safety: '/data/community-borders.json', // Safety uses community borders with crime data
   sustainability: '/data/sustainability.geojson',
   
   // OpenLayers QGIS export layers
@@ -216,14 +218,13 @@ export const getLayerStyle = (layerId, feature) => {
 export const createPopupContent = (feature, layerId) => {
   const props = feature?.properties || {};
   let name = props.name || props.NAME || props.Name || props.full_name || 'Feature';
-  let content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px;">${name}</b>`;
+  let content = '';
   
-  // Layer-specific popup content
+  // Layer-specific popup content (create content from scratch for each layer)
   if (layerId === 'major_roads') {
     // Major Roads - show road information with more detail
-    if (props.full_name && props.full_name !== name) {
-      content += `<br><span style="color: #666;"><strong>Full Name:</strong></span> ${props.full_name}`;
-    }
+    const roadName = props.full_name || props.name || props.NAME || props.Name || 'Major Road';
+    content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px; color: #3b82f6;">${roadName}</b>`;
     if (props.street_typ) {
       const roadType = props.street_typ.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       content += `<br><span style="color: #666;"><strong>Road Type:</strong></span> ${roadType}`;
@@ -306,27 +307,166 @@ export const createPopupContent = (feature, layerId) => {
       }
     }
   }
-  else if (layerId === 'parks') {
-    // Parks - show park information
-    if (props.park_name || props.name) {
-      const parkName = props.park_name || props.name;
-      content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px; color: #22c55e;">${parkName}</b>`;
-    }
+  else if (layerId === 'parks' || (layerId && (layerId.includes('park') || props.park_name || props.park_type || props.area_ha))) {
+    // Parks - show park information prominently (similar to flood risk popup)
+    // Determine if it's a park or green space
+    const parkTypeStr = props.park_type || props.type || '';
+    const parkTypeLower = String(parkTypeStr).toLowerCase();
+    const nameLower = String(props.park_name || props.name || props.NAME || props.Name || props.full_name || '').toLowerCase();
+    
+    // Determine if it's a park or green space
+    const isPark = parkTypeLower.includes('park') || 
+                   nameLower.includes('park') || 
+                   parkTypeLower.includes('recreation') ||
+                   parkTypeLower.includes('community park') ||
+                   parkTypeLower.includes('regional park');
+    
+    const isGreenSpace = parkTypeLower.includes('green') || 
+                         parkTypeLower.includes('natural') ||
+                         parkTypeLower.includes('open space') ||
+                         parkTypeLower.includes('conservation');
+    
+    const displayType = isPark ? 'Park' : (isGreenSpace ? 'Green Space' : 'Park/Green Space');
+    const parkName = props.park_name || props.name || props.NAME || props.Name || props.full_name || displayType;
+    const emoji = isPark ? '🌳' : (isGreenSpace ? '🌿' : '🌳');
+    
+    content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 18px; color: #22c55e;">${emoji} ${parkName}</b>`;
+    
+    // Show park type prominently first
     if (props.park_type) {
-      const parkType = props.park_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      content += `<br><span style="color: #666;"><strong>Type:</strong></span> ${parkType}`;
+      const parkType = String(props.park_type).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Type: ${parkType}</span>`;
+    } else if (props.type && !props.type.match(/^(id|ID|Id)$/)) {
+      const parkType = String(props.type).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Type: ${parkType}</span>`;
     }
-    if (props.area_ha) {
-      content += `<br><span style="color: #666;"><strong>Area:</strong></span> ${props.area_ha.toFixed(2)} hectares`;
-    } else if (props.area) {
-      content += `<br><span style="color: #666;"><strong>Area:</strong></span> ${props.area}`;
+    
+    // Calculate or get area
+    let areaHectares = null;
+    
+    // First try to get area from properties
+    if (props.area_ha !== null && props.area_ha !== undefined && props.area_ha !== '' && props.area_ha > 0) {
+      areaHectares = typeof props.area_ha === 'number' ? props.area_ha : parseFloat(props.area_ha);
+    } else if (props.area_sqm && props.area_sqm > 0) {
+      areaHectares = (props.area_sqm / 10000);
+    } else if (props.area !== null && props.area !== undefined && props.area !== '' && props.area > 0) {
+      // Try to parse area, might be in different units
+      const areaNum = typeof props.area === 'number' ? props.area : parseFloat(props.area);
+      if (props.area_unit && props.area_unit.toLowerCase().includes('hectare')) {
+        areaHectares = areaNum;
+      } else if (props.area_unit && props.area_unit.toLowerCase().includes('meter')) {
+        areaHectares = areaNum / 10000;
+      } else {
+        // Assume square meters if no unit specified
+        areaHectares = areaNum / 10000;
+      }
+    } else {
+      // Calculate area from geometry if available
+      try {
+        const geom = feature?.geometry;
+        // Handle both OpenLayers geometry objects and GeoJSON geometry
+        if (geom) {
+          let olGeometry = null;
+          
+          // If it's an OpenLayers geometry (has getType method)
+          if (geom.getType && typeof geom.getType === 'function') {
+            olGeometry = geom;
+          } 
+          // If it's a GeoJSON geometry, we need to convert it
+          else if (geom.type && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')) {
+            // For GeoJSON, we can calculate area using coordinates
+            // This is a simplified calculation - for accurate results, use proper projection
+            if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates[0]) {
+              // Simple area calculation using shoelace formula (approximate for small areas)
+              const coords = geom.coordinates[0];
+              let area = 0;
+              for (let i = 0; i < coords.length - 1; i++) {
+                area += coords[i][0] * coords[i + 1][1];
+                area -= coords[i + 1][0] * coords[i][1];
+              }
+              area = Math.abs(area) / 2;
+              // Convert from square degrees to approximate square meters (rough estimate)
+              // This is approximate - for accurate results, proper projection is needed
+              // Using average latitude for Calgary (~51 degrees)
+              const lat = coords[0]?.[1] || 51.0;
+              const metersPerDegreeLat = 111320;
+              const metersPerDegreeLon = 111320 * Math.cos(lat * Math.PI / 180);
+              const areaSqm = area * metersPerDegreeLat * metersPerDegreeLon;
+              if (areaSqm > 0) {
+                areaHectares = areaSqm / 10000;
+              }
+            }
+          }
+          
+          // If we have an OpenLayers geometry, use getArea
+          if (olGeometry && (olGeometry.getType() === 'Polygon' || olGeometry.getType() === 'MultiPolygon')) {
+            const areaSqm = getArea(olGeometry);
+            if (areaSqm > 0) {
+              areaHectares = areaSqm / 10000;
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Could not calculate area from geometry:', error);
+      }
     }
-    if (props.ward) {
-      content += `<br><span style="color: #666;"><strong>Ward:</strong></span> ${props.ward}`;
+    
+    // Show area prominently
+    if (areaHectares !== null && areaHectares > 0) {
+      const areaFormatted = areaHectares.toLocaleString('en-US', { maximumFractionDigits: 2 });
+      content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Size: ${areaFormatted} hectares</span>`;
+      
+      // Also show in acres for reference (1 hectare = 2.471 acres)
+      const acres = (areaHectares * 2.471).toLocaleString('en-US', { maximumFractionDigits: 1 });
+      content += `<br><span style="color: #666; font-size: 12px;">(${acres} acres)</span>`;
+    } else {
+      // If no area available, show other useful information
+      if (props.ward) {
+        content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Location: Ward ${props.ward}</span>`;
+      } else if (props.quadrant) {
+        content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Location: ${props.quadrant} Quadrant</span>`;
+      } else if (props.sector) {
+        content += `<br><br><span style="color: #22c55e; font-size: 16px; font-weight: bold;">Location: ${props.sector} Sector</span>`;
+      } else if (props.description) {
+        const desc = String(props.description).substring(0, 80);
+        content += `<br><br><span style="color: #22c55e; font-size: 14px; font-weight: bold;">${desc}${String(props.description).length > 80 ? '...' : ''}</span>`;
+      } else if (props.facilities || props.amenities) {
+        const facilities = props.facilities || props.amenities;
+        content += `<br><br><span style="color: #22c55e; font-size: 14px; font-weight: bold;">Features: ${facilities}</span>`;
+      } else {
+        content += `<br><br><span style="color: #22c55e; font-size: 14px; font-weight: bold;">${displayType}</span>`;
+      }
     }
-    if (props.quadrant) {
+    
+    // Additional details
+    if (props.ward && (!props.area_ha && !props.area && !props.area_sqm)) {
+      // Only show if not already shown above
+    } else if (props.ward) {
+      content += `<br><br><span style="color: #666;"><strong>Ward:</strong></span> ${props.ward}`;
+    }
+    if (props.quadrant && (!props.area_ha && !props.area && !props.area_sqm)) {
+      // Only show if not already shown above
+    } else if (props.quadrant) {
       content += `<br><span style="color: #666;"><strong>Quadrant:</strong></span> ${props.quadrant}`;
     }
+    if (props.sector && (!props.area_ha && !props.area && !props.area_sqm)) {
+      // Only show if not already shown above
+    } else if (props.sector) {
+      content += `<br><span style="color: #666;"><strong>Sector:</strong></span> ${props.sector}`;
+    }
+    if (props.description && (!props.area_ha && !props.area && !props.area_sqm)) {
+      // Only show if not already shown above
+    } else if (props.description) {
+      const desc = String(props.description).substring(0, 150);
+      content += `<br><br><span style="color: #666; font-size: 12px;">${desc}${String(props.description).length > 150 ? '...' : ''}</span>`;
+    }
+    if (props.facilities) {
+      content += `<br><span style="color: #666;"><strong>Facilities:</strong></span> ${props.facilities}`;
+    }
+    if (props.amenities) {
+      content += `<br><span style="color: #666;"><strong>Amenities:</strong></span> ${props.amenities}`;
+    }
+    content += `</div>`;
   }
   else if (layerId === 'lrt' || layerId === 'lrt_stops' || layerId === 'lrt_lines') {
     // LRT - show stop or line information
@@ -400,26 +540,52 @@ export const createPopupContent = (feature, layerId) => {
       }
     }
   }
-  else if (layerId === 'flood' || layerId === 'flood_01_chance') {
-    // Flood Risk - show flood zone information
-    content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px; color: #3b82f6;">Flood Risk Zone</b>`;
+  else if (layerId === 'flood' || layerId === 'flood_01_chance' || 
+           (layerId && (layerId.includes('flood') || props.scenario || props.flow_rate))) {
+    // Flood Risk - show flow rate and probability prominently
+    content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 18px; color: #0066cc;">⚠️ Flood Risk Zone</b>`;
+    
+    // Show probability of flooding prominently
+    let probability = '1%';
     if (props.scenario) {
-      content += `<br><span style="color: #666;"><strong>Scenario:</strong></span> ${props.scenario}`;
+      // Extract probability from scenario if available (e.g., "1 in 100 Year" = 1%)
+      const scenario = String(props.scenario).toLowerCase();
+      if (scenario.includes('1 in 100') || scenario.includes('100 year')) {
+        probability = '1%';
+      } else if (scenario.includes('1 in 1000') || scenario.includes('1000 year')) {
+        probability = '0.1%';
+      } else if (scenario.includes('1 in 500') || scenario.includes('500 year')) {
+        probability = '0.2%';
+      } else if (scenario.includes('1 in 50') || scenario.includes('50 year')) {
+        probability = '2%';
+      }
+      content += `<br><br><span style="color: #0066cc; font-size: 16px; font-weight: bold;">Annual Flood Probability: ${probability}</span>`;
+      content += `<br><span style="color: #666; font-size: 12px;">(${props.scenario})</span>`;
+    } else {
+      content += `<br><br><span style="color: #0066cc; font-size: 16px; font-weight: bold;">Annual Flood Probability: ${probability}</span>`;
+      content += `<br><span style="color: #666; font-size: 12px;">(1 in 100 Year Event)</span>`;
+    }
+    
+    // Show flow rate prominently
+    if (props.flow_rate !== null && props.flow_rate !== undefined && props.flow_rate > 0) {
+      const flowRate = typeof props.flow_rate === 'number' ? props.flow_rate.toLocaleString('en-US', { maximumFractionDigits: 2 }) : props.flow_rate;
+      content += `<br><br><span style="color: #0066cc; font-size: 16px; font-weight: bold;">Flow Rate: ${flowRate} m³/s</span>`;
+    } else {
+      content += `<br><br><span style="color: #666; font-size: 14px;">Flow Rate: Not specified</span>`;
+    }
+    
+    // Additional details
+    if (props.reach) {
+      content += `<br><br><span style="color: #666;"><strong>Reach:</strong></span> ${props.reach}`;
     }
     if (props.type) {
-      const floodType = props.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const floodType = String(props.type).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       content += `<br><span style="color: #666;"><strong>Type:</strong></span> ${floodType}`;
-    }
-    if (props.reach) {
-      content += `<br><span style="color: #666;"><strong>Reach:</strong></span> ${props.reach}`;
-    }
-    if (props.flow_rate !== null && props.flow_rate !== undefined && props.flow_rate > 0) {
-      content += `<br><span style="color: #666;"><strong>Flow Rate:</strong></span> ${props.flow_rate} m³/s`;
     }
     if (props.id !== null && props.id !== undefined) {
       content += `<br><span style="color: #666;"><strong>Zone ID:</strong></span> ${props.id}`;
     }
-    content += `<br><span style="color: #0066cc; font-weight: bold;">⚠️ 1% Annual Chance Flood Zone</span>`;
+    content += `</div>`;
   }
   else if (layerId === 'community_borders') {
     // Community Borders - show community information
@@ -461,6 +627,11 @@ export const createPopupContent = (feature, layerId) => {
   }
   else {
     // Default - show only meaningful fields, filter technical ones
+    // Only create default content if no layer-specific content was created
+    if (!content) {
+      content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px;">${name}</b>`;
+    }
+    
     const technicalFields = [
       'id', 'ID', 'Id', 'modified_a', 'modified_g', 'obsolete_c', 'segment_id',
       'left_from_', 'left_to_ad', 'right_from', 'right_to_a', 'municipali',
@@ -494,7 +665,16 @@ export const createPopupContent = (feature, layerId) => {
     });
   }
   
-  content += '</div>';
+  // Ensure content always has a closing div
+  if (content && !content.includes('</div>')) {
+    content += '</div>';
+  }
+  
+  // If content is still empty, create a minimal default
+  if (!content || content.trim() === '') {
+    content = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px;">${name}</b></div>`;
+  }
+  
   return content;
 };
 
@@ -546,19 +726,173 @@ export const getOpenLayersStyle = (layerId, feature, resolution) => {
       });
       
     case 'lrt_lines':
+      // Determine line color based on specific routes and direction/quadrant
+      const lineProps = properties;
+      const route = String(lineProps.route || lineProps.line || '').toUpperCase();
+      const quadrant = String(lineProps.quadrant || lineProps.octant || '').toUpperCase();
+      const direction = String(lineProps.direction || lineProps.direction_ || '').toUpperCase();
+      const leg = String(lineProps.leg || '').toUpperCase();
+      
+      // Special case: Erlton to Somerset line (Route 201, SW leg, North/South) = RED
+      const isErltonToSomerset = (route.includes('201') && leg.includes('SW') && direction.includes('NORTH/SOUTH')) ||
+                                  (route.includes('201') && leg.includes('SW'));
+      
+      // Special case: All West leg lines (Sunalta, Shaganappi Point, Westbrook, 45 Street, Sirocco, 69 Street) = BLUE
+      // Check for "WEST" but exclude "NW" and "SW" to avoid false matches
+      const isWestLeg = (leg === 'WEST' || leg.includes('WEST')) && 
+                        !leg.includes('NW') && 
+                        !leg.includes('SW');
+      
+      // Check if it's NW (northwest) or NE (northeast) - prioritize leg property
+      // Only check if not Erlton to Somerset and not West leg
+      let isNW = false;
+      let isNE = false;
+      if (!isErltonToSomerset && !isWestLeg) {
+        // Prioritize leg property (most reliable)
+        if (leg.includes('NE')) {
+          isNE = true;
+        } else if (leg.includes('NW')) {
+          isNW = true;
+        } else {
+          // Fallback to other properties
+          isNW = quadrant.includes('NW') || 
+                  direction.includes('NW') || 
+                  direction.includes('WEST');
+          isNE = quadrant.includes('NE') || 
+                 direction.includes('NE') || 
+                 direction.includes('EAST');
+        }
+      }
+      
+      // If quadrant/direction not found, check coordinates to determine NW vs NE
+      // Calgary center is approximately -114.0719, 51.0447
+      let isNWByCoords = false;
+      let isNEByCoords = false;
+      if (!isErltonToSomerset && !isNW && !isNE && geometry) {
+        try {
+          const extent = geometry.getExtent();
+          if (extent && extent.length === 4) {
+            // Get center longitude of the line
+            const centerLon = (extent[0] + extent[2]) / 2;
+            // Convert from EPSG:3857 to lon/lat if needed, or use directly if already in lon/lat
+            // For Calgary, lines west of center (~-114.1) are NW, east are NE
+            // But we're in EPSG:3857, so we need to check differently
+            // Actually, let's check the actual coordinates
+            const coords = geometry.getCoordinates();
+            if (coords && coords.length > 0) {
+              // Get first coordinate and convert to lon/lat
+              const firstCoord = coords[0];
+              if (Array.isArray(firstCoord) && firstCoord.length >= 2) {
+                const [lon, lat] = toLonLat([firstCoord[0], firstCoord[1]]);
+                // Calgary center longitude is approximately -114.07
+                // Lines with longitude < -114.07 are more west (NW), > -114.07 are more east (NE)
+                if (lon < -114.07) {
+                  isNWByCoords = true;
+                } else if (lon > -114.07) {
+                  isNEByCoords = true;
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.log('Could not determine line direction from coordinates:', error);
+        }
+      }
+      
+      // Erlton to Somerset = Red, West leg = Blue, NE = Blue, NW = Red, default to red
+      const lineColor = (isErltonToSomerset || isNW || isNWByCoords) ? 'rgba(239,68,68,1.0)' : 
+                        (isWestLeg || isNE || isNEByCoords) ? 'rgba(59,130,246,1.0)' : 
+                        'rgba(239,68,68,1.0)'; // Default to red
+      
       return new Style({
         stroke: new Stroke({
-          color: 'rgba(255,0,0,1.0)',
+          color: lineColor,
           width: 2,
         }),
       });
       
     case 'lrt_stops':
+      // Determine line color based on specific routes and direction/quadrant
+      const stopProps = properties;
+      const stopRoute = String(stopProps.route || stopProps.line || '').toUpperCase();
+      const stopQuadrant = String(stopProps.quadrant || stopProps.octant || '').toUpperCase();
+      const stopDirection = String(stopProps.direction || stopProps.direction_ || '').toUpperCase();
+      const stopLeg = String(stopProps.leg || '').toUpperCase();
+      const stopName = String(stopProps.stationnam || stopProps.name || stopProps.stop_name || '').toUpperCase();
+      
+      // Special case: Erlton to Somerset line stops (Route 201, SW leg, North/South) = RED
+      const isErltonToSomersetStop = (stopRoute.includes('201') && stopLeg.includes('SW') && stopDirection.includes('NORTH/SOUTH')) ||
+                                      (stopRoute.includes('201') && stopLeg.includes('SW'));
+      
+      // Manually set specific West leg stations to BLUE
+      const isWestLegStop = stopName.includes('SUNALTA') ||
+                            stopName.includes('SHAGANAPPI POINT') ||
+                            stopName.includes('SHAGANAPPI') ||
+                            stopName.includes('WESTBROOK') ||
+                            stopName.includes('45 STREET') ||
+                            stopName.includes('SIROCCO') ||
+                            stopName.includes('69 STREET');
+      
+      // Check if it's NW (northwest) or NE (northeast) - prioritize leg property
+      // Only check if not Erlton to Somerset and not West leg
+      let isNWStop = false;
+      let isNEStop = false;
+      if (!isErltonToSomersetStop && !isWestLegStop) {
+        // Prioritize leg property (most reliable)
+        if (stopLeg.includes('NE')) {
+          isNEStop = true;
+        } else if (stopLeg.includes('NW')) {
+          isNWStop = true;
+        } else {
+          // Fallback to other properties - but don't use "WEST" direction here as it conflicts with West leg
+          isNWStop = stopQuadrant.includes('NW') || 
+                      stopDirection.includes('NW');
+          isNEStop = stopQuadrant.includes('NE') || 
+                     stopDirection.includes('NE') || 
+                     stopDirection.includes('EAST');
+        }
+      }
+      
+      // If quadrant/direction not found, check coordinates to determine NW vs NE
+      let isNWStopByCoords = false;
+      let isNEStopByCoords = false;
+      if (!isErltonToSomersetStop && !isNWStop && !isNEStop && geometry) {
+        try {
+          const coords = geometry.getCoordinates();
+          if (coords && coords.length >= 2) {
+            const [lon, lat] = toLonLat(coords);
+            // Calgary center longitude is approximately -114.07
+            // Stops with longitude < -114.07 are more west (NW), > -114.07 are more east (NE)
+            if (lon < -114.07) {
+              isNWStopByCoords = true;
+            } else if (lon > -114.07) {
+              isNEStopByCoords = true;
+            }
+          }
+        } catch (error) {
+          console.log('Could not determine stop direction from coordinates:', error);
+        }
+      }
+      
+      // All train icons are black
+      const trainColor = '#000000';
+      
+      // Use minimalist train icon (silhouette style) in black
+      const trainIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+        <rect x="10" y="6" width="12" height="18" rx="2" fill="${trainColor}"/>
+        <line x1="12" y1="8" x2="20" y2="8" stroke="${trainColor}" stroke-width="0.5" opacity="0.2"/>
+        <circle cx="13" cy="20" r="1.5" fill="${trainColor}"/>
+        <circle cx="19" cy="20" r="1.5" fill="${trainColor}"/>
+        <line x1="8" y1="28" x2="13" y2="24" stroke="${trainColor}" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="24" y1="28" x2="19" y2="24" stroke="${trainColor}" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`;
       return new Style({
-        image: new Circle({
-          radius: 6,
-          fill: new Fill({ color: 'rgba(255,0,0,1.0)' }),
-          stroke: new Stroke({ color: '#fff', width: 2 }),
+        image: new Icon({
+          src: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(trainIconSvg),
+          scale: 1.0,
+          anchor: [0.5, 0.5],
+          anchorXUnits: 'fraction',
+          anchorYUnits: 'fraction',
         }),
       });
       
@@ -630,6 +964,80 @@ export const getOpenLayersStyle = (layerId, feature, resolution) => {
         }),
         fill: new Fill({
           color: 'rgba(0,140,255,0.3)',
+        }),
+      });
+      
+    case 'safety':
+      // Style based on crime count - using 200-crime intervals per class
+      // Each class represents 200 crimes (0-200, 200-400, 400-600, etc.)
+      const crimeCount = properties.crime_by_community_total_crime || 0;
+      const intervalSize = 200; // Each class covers 200 crimes
+      const classIndex = Math.floor(crimeCount / intervalSize);
+      const positionInClass = (crimeCount % intervalSize) / intervalSize; // 0-1 within the class
+      
+      // Define many classes (15 classes = up to 3000 crimes) with distinct colors
+      const getClassColor = (index) => {
+        const classes = [
+          { r: 240, g: 255, b: 250, opacity: 0.10 },   // 0-200: Very light cyan-green
+          { r: 200, g: 255, b: 220, opacity: 0.15 },   // 200-400: Light green
+          { r: 160, g: 255, b: 180, opacity: 0.20 },   // 400-600: Bright green
+          { r: 140, g: 255, b: 150, opacity: 0.25 },   // 600-800: Yellow-green
+          { r: 220, g: 255, b: 120, opacity: 0.30 },   // 800-1000: Lime
+          { r: 255, g: 255, b: 100, opacity: 0.35 },   // 1000-1200: Light yellow
+          { r: 255, g: 255, b: 80, opacity: 0.40 },    // 1200-1400: Yellow
+          { r: 255, g: 240, b: 60, opacity: 0.45 },    // 1400-1600: Yellow-orange
+          { r: 255, g: 220, b: 40, opacity: 0.50 },    // 1600-1800: Light orange
+          { r: 255, g: 200, b: 20, opacity: 0.55 },     // 1800-2000: Orange
+          { r: 255, g: 170, b: 0, opacity: 0.60 },    // 2000-2200: Deep orange
+          { r: 255, g: 140, b: 0, opacity: 0.65 },     // 2200-2400: Red-orange
+          { r: 255, g: 100, b: 0, opacity: 0.70 },    // 2400-2600: Bright red
+          { r: 220, g: 50, b: 0, opacity: 0.80 },      // 2600-2800: Dark red
+          { r: 150, g: 20, b: 0, opacity: 0.90 },     // 2800-3000: Very dark red
+          { r: 50, g: 5, b: 0, opacity: 0.98 },        // 3000+: Almost black
+        ];
+        return classes[Math.min(index, classes.length - 1)];
+      };
+      
+      const currentClass = getClassColor(classIndex);
+      const nextClass = getClassColor(classIndex + 1);
+      
+      // Interpolate within the class
+      const r = Math.round(currentClass.r + (nextClass.r - currentClass.r) * positionInClass);
+      const g = Math.round(currentClass.g + (nextClass.g - currentClass.g) * positionInClass);
+      const b = Math.round(currentClass.b + (nextClass.b - currentClass.b) * positionInClass);
+      const opacity = currentClass.opacity + (nextClass.opacity - currentClass.opacity) * positionInClass;
+      
+      // Normalize for stroke calculation (0-1 scale)
+      const normalizedCrime = Math.min(crimeCount / 3000, 1);
+      
+      // Stroke color - darker for higher crime
+      const strokeR = Math.round(140 - (140 - 10) * normalizedCrime);
+      const strokeG = Math.round(140 - (140 - 3) * normalizedCrime);
+      const strokeB = Math.round(120 - (120 - 2) * normalizedCrime);
+      const strokeWidth = 0.5 + normalizedCrime * 4.5; // 0.5px to 5px
+      
+      if (geomType === 'Polygon' || geomType === 'MultiPolygon') {
+        return new Style({
+          stroke: new Stroke({
+            color: `rgba(${strokeR},${strokeG},${strokeB},${0.3 + 0.7 * normalizedCrime})`,
+            width: strokeWidth,
+          }),
+          fill: new Fill({
+            color: `rgba(${r},${g},${b},${opacity})`,
+          }),
+        });
+      }
+      // Fallback for point features
+      return new Style({
+        image: new Circle({
+          radius: 4 + normalizedCrime * 12, // 4px to 16px
+          fill: new Fill({ 
+            color: `rgba(${r},${g},${b},${opacity})` 
+          }),
+          stroke: new Stroke({ 
+            color: `rgba(${strokeR},${strokeG},${strokeB},1)`,
+            width: strokeWidth
+          }),
         }),
       });
       

@@ -304,6 +304,9 @@ const MapContainerOL = ({ activeLayer, onMapReady }) => {
           style: (feature, resolution) => {
             return getOpenLayersStyle(activeLayer, feature, resolution);
           },
+          // Ensure layer is interactive and updates properly
+          updateWhileInteracting: true,
+          updateWhileAnimating: true,
         });
         
         // Add the layer to the map
@@ -360,113 +363,150 @@ const MapContainerOL = ({ activeLayer, onMapReady }) => {
       setIsLoading(false);
       console.log(`Layer loading complete for: ${activeLayer}`);
 
-      // Add popup interaction (only add once, reuse)
-      if (!mapInstanceRef.current._popupHandler) {
-        mapInstanceRef.current.on('singleclick', (evt) => {
-          const feature = mapInstanceRef.current.forEachFeatureAtPixel(
-            evt.pixel,
-            (feature) => feature
-          );
+      // Add popup interaction - recreate handler when activeLayer changes to get current value
+      // Remove existing handler if it exists
+      if (mapInstanceRef.current._popupHandler) {
+        mapInstanceRef.current.un('singleclick', mapInstanceRef.current._popupHandler);
+      }
+      
+      // Create new handler with current activeLayer
+      const clickHandler = (evt) => {
+        // Use hitTolerance for better polygon detection (parks, flood zones, etc.)
+        const feature = mapInstanceRef.current.forEachFeatureAtPixel(
+          evt.pixel,
+          (feature) => feature,
+          {
+            hitTolerance: 5, // 5 pixel tolerance for better click detection
+            layerFilter: (layer) => {
+              // Only check vector layers (not tile layers)
+              return layer instanceof VectorLayer;
+            }
+          }
+        );
+        
+        console.log('Click detected, feature found:', !!feature, 'activeLayer:', activeLayer);
+        
+        if (feature) {
+          const props = feature.getProperties();
+          const geom = feature.getGeometry();
+          let layerId = activeLayer;
           
-          if (feature) {
-            const props = feature.getProperties();
-            const geom = feature.getGeometry();
-            let layerId = activeLayer;
-            
-            // Handle clustered features (traffic layer)
-            if (activeLayer === 'traffic' && feature.get('features')) {
-              const features = feature.get('features');
-              if (features.length > 1) {
-                // Cluster clicked - show summary
-                const incidents = features.filter(f => f.get('_layerType') === 'incident').length;
-                const signals = features.filter(f => f.get('_layerType') === 'signal').length;
-                const clusterContent = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px; color: #ff8c00;">Traffic Cluster</b><br><span style="color: #666;"><strong>Total Items:</strong></span> ${features.length}<br><span style="color: #666;"><strong>Incidents:</strong></span> ${incidents}<br><span style="color: #666;"><strong>Signals:</strong></span> ${signals}</div>`;
-                const mapElement = mapRef.current;
-                if (mapElement) {
-                  const rect = mapElement.getBoundingClientRect();
-                  setPopupContent(clusterContent);
-                  setPopupPosition({ 
-                    x: evt.pixel[0] + rect.left, 
-                    y: evt.pixel[1] + rect.top 
-                  });
-                } else {
-                  setPopupContent(clusterContent);
-                  setPopupPosition({ x: evt.pixel[0], y: evt.pixel[1] });
-                }
-                return;
-              } else if (features.length === 1) {
-                // Single feature in cluster
-                const singleFeature = features[0];
-                const singleProps = singleFeature.getProperties();
-                const isSignal = singleProps._layerType === 'signal';
-                layerId = isSignal ? 'traffic_signals' : 'traffic_incidents';
-                const popupContent = createPopupContent(
-                  { properties: singleProps, geometry: singleFeature.getGeometry() },
-                  layerId
-                );
-                if (popupContent) {
-                  const mapElement = mapRef.current;
-                  if (mapElement) {
-                    const rect = mapElement.getBoundingClientRect();
-                    setPopupContent(popupContent);
-                    setPopupPosition({ 
-                      x: evt.pixel[0] + rect.left, 
-                      y: evt.pixel[1] + rect.top 
-                    });
-                  } else {
-                    setPopupContent(popupContent);
-                    setPopupPosition({ x: evt.pixel[0], y: evt.pixel[1] });
-                  }
-                }
-                return;
-              }
-            }
-            
-            // Determine layer ID for popup based on active layer
-            if (activeLayer === 'lrt') {
-              const isStop = geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint');
-              layerId = isStop ? 'lrt_stops' : 'lrt_lines';
-            } else if (activeLayer === 'traffic') {
-              const isSignal = props._layerType === 'signal';
-              layerId = isSignal ? 'traffic_signals' : 'traffic_incidents';
-            } else if (activeLayer === 'flood') {
-              layerId = 'flood_01_chance'; // Use flood_01_chance for popup formatting
-            }
-            
-            const popupContent = createPopupContent(
-              { properties: props, geometry: geom },
-              layerId
-            );
-            
-            if (popupContent) {
-              // Get map container position relative to viewport
+          console.log('Feature properties:', Object.keys(props));
+          console.log('Feature geometry type:', geom?.getType());
+          
+          // Handle clustered features (traffic layer)
+          if (activeLayer === 'traffic' && feature.get('features')) {
+            const features = feature.get('features');
+            if (features.length > 1) {
+              // Cluster clicked - show summary
+              const incidents = features.filter(f => f.get('_layerType') === 'incident').length;
+              const signals = features.filter(f => f.get('_layerType') === 'signal').length;
+              const clusterContent = `<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px; color: #ff8c00;">Traffic Cluster</b><br><span style="color: #666;"><strong>Total Items:</strong></span> ${features.length}<br><span style="color: #666;"><strong>Incidents:</strong></span> ${incidents}<br><span style="color: #666;"><strong>Signals:</strong></span> ${signals}</div>`;
               const mapElement = mapRef.current;
               if (mapElement) {
                 const rect = mapElement.getBoundingClientRect();
-                setPopupContent(popupContent);
+                setPopupContent(clusterContent);
                 setPopupPosition({ 
                   x: evt.pixel[0] + rect.left, 
                   y: evt.pixel[1] + rect.top 
                 });
               } else {
-                setPopupContent(popupContent);
+                setPopupContent(clusterContent);
                 setPopupPosition({ x: evt.pixel[0], y: evt.pixel[1] });
               }
+              return;
+            } else if (features.length === 1) {
+              // Single feature in cluster
+              const singleFeature = features[0];
+              const singleProps = singleFeature.getProperties();
+              const isSignal = singleProps._layerType === 'signal';
+              layerId = isSignal ? 'traffic_signals' : 'traffic_incidents';
+              const popupContent = createPopupContent(
+                { properties: singleProps, geometry: singleFeature.getGeometry() },
+                layerId
+              );
+              if (popupContent) {
+                const mapElement = mapRef.current;
+                if (mapElement) {
+                  const rect = mapElement.getBoundingClientRect();
+                  setPopupContent(popupContent);
+                  setPopupPosition({ 
+                    x: evt.pixel[0] + rect.left, 
+                    y: evt.pixel[1] + rect.top 
+                  });
+                } else {
+                  setPopupContent(popupContent);
+                  setPopupPosition({ x: evt.pixel[0], y: evt.pixel[1] });
+                }
+              }
+              return;
+            }
+          }
+          
+          // Determine layer ID for popup based on active layer
+          if (activeLayer === 'lrt') {
+            const isStop = geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint');
+            layerId = isStop ? 'lrt_stops' : 'lrt_lines';
+          } else if (activeLayer === 'traffic') {
+            const isSignal = props._layerType === 'signal';
+            layerId = isSignal ? 'traffic_signals' : 'traffic_incidents';
+          } else if (activeLayer === 'flood' || activeLayer === 'flood_01_chance') {
+            layerId = 'flood_01_chance'; // Use flood_01_chance for popup formatting
+          } else {
+            // Ensure layerId is set to activeLayer if not handled above
+            layerId = layerId || activeLayer;
+          }
+          
+          const popupContent = createPopupContent(
+            { properties: props, geometry: geom },
+            layerId
+          );
+          
+          console.log('Popup content created:', popupContent ? 'Yes' : 'No', 'Length:', popupContent?.length);
+          console.log('LayerId used:', layerId);
+          
+          // Only show popup if content is not empty
+          if (popupContent && popupContent.trim() && popupContent !== '<div style="min-width: 200px; max-width: 300px;"><b style="font-size: 16px;">Feature</b></div>') {
+            // Get map container position relative to viewport
+            const mapElement = mapRef.current;
+            if (mapElement) {
+              const rect = mapElement.getBoundingClientRect();
+              console.log('Setting popup at position:', evt.pixel[0] + rect.left, evt.pixel[1] + rect.top);
+              setPopupContent(popupContent);
+              setPopupPosition({ 
+                x: evt.pixel[0] + rect.left, 
+                y: evt.pixel[1] + rect.top 
+              });
+            } else {
+              console.log('Setting popup at pixel position:', evt.pixel[0], evt.pixel[1]);
+              setPopupContent(popupContent);
+              setPopupPosition({ x: evt.pixel[0], y: evt.pixel[1] });
             }
           } else {
-            // Clicked on empty space - close popup
-            setPopupContent(null);
+            console.log('Popup content rejected - empty or invalid');
           }
-        });
-        mapInstanceRef.current._popupHandler = true;
-      }
+        } else {
+          // Clicked on empty space - close popup
+          setPopupContent(null);
+        }
+      };
+      
+      mapInstanceRef.current.on('singleclick', clickHandler);
+      mapInstanceRef.current._popupHandler = clickHandler;
 
       // Add hover effect
       if (!mapInstanceRef.current._hoverHandler) {
         mapInstanceRef.current.on('pointermove', (evt) => {
           const feature = mapInstanceRef.current.forEachFeatureAtPixel(
             evt.pixel,
-            (feature) => feature
+            (feature) => feature,
+            {
+              hitTolerance: 5, // 5 pixel tolerance for better hover detection
+              layerFilter: (layer) => {
+                // Only check vector layers (not tile layers)
+                return layer instanceof VectorLayer;
+              }
+            }
           );
           
           mapInstanceRef.current.getViewport().style.cursor = feature ? 'pointer' : '';

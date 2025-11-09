@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Layers, Info, TrendingUp } from 'lucide-react';
 import LayerControl from './LayerControl';
-import NeighborhoodList from './NeighborhoodList';
 import { calculateLayerMetric } from '../../utils/layerMetrics';
 
 const Sidebar = ({ 
@@ -9,8 +8,6 @@ const Sidebar = ({
   layers, 
   activeLayer, 
   onLayerChange, 
-  neighborhoods, 
-  onNeighborhoodClick,
   stats 
 }) => {
   const [layerMetric, setLayerMetric] = useState(null);
@@ -88,12 +85,6 @@ const Sidebar = ({
             ))}
           </div>
         </div>
-
-        {/* Neighborhoods */}
-        <NeighborhoodList 
-          neighborhoods={neighborhoods}
-          onNeighborhoodClick={onNeighborhoodClick}
-        />
       </div>
     </aside>
   );
