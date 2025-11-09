@@ -14,7 +14,7 @@ const LayerControl = ({ layers, activeLayer, onLayerChange }) => {
             className={`w-full p-4 rounded-xl transition-all ${
               isActive 
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg scale-105' 
-                : 'bg-gray-700 hover:bg-gray-650'
+                : 'bg-gray-700 hover:bg-gray-600'
             }`}
           >
             <div className="flex items-center gap-3">

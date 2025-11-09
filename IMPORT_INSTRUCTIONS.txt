@@ -1,0 +1,25 @@
+QUICK START: Import Your QGIS Data
+===================================
+
+Your QGIS export is at: ~/Downloads/qgis2web_2025_11_08-19_28_48_571715
+
+STEP 1: Export GeoJSON from QGIS
+---------------------------------
+1. Open your QGIS project
+2. Right-click the flood layer → Export → Save Features As...
+3. Format: GeoJSON
+4. Save to: /Users/lidmarka/Developer/Urban-Insight/public/data/flood-zones.geojson
+5. Repeat for other layers (roads, accessibility, etc.)
+
+STEP 2: Update Layer Mapping
+-----------------------------
+Edit: src/utils/loadGeoJSON.js
+Update the layerFileMap to point to your new files
+
+STEP 3: Test
+------------
+npm run dev
+Open http://localhost:5173
+Click the Flood Risk layer button
+
+For detailed instructions, see: IMPORT_YOUR_QGIS_DATA.md

@@ -13,7 +13,7 @@ const NeighborhoodList = ({ neighborhoods, onNeighborhoodClick }) => {
           <button
             key={idx}
             onClick={() => onNeighborhoodClick(neighborhood)}
-            className="w-full bg-gray-700 hover:bg-gray-650 p-3 rounded-lg transition-colors text-left"
+            className="w-full bg-gray-700 hover:bg-gray-600 p-3 rounded-lg transition-colors text-left"
           >
             <div className="flex justify-between items-start mb-2">
               <div className="font-semibold">{neighborhood.name}</div>

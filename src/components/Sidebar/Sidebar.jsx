@@ -31,7 +31,7 @@ const Sidebar = ({
         </div>
 
         {/* Stats Overview */}
-        <div className="bg-gradient-to-br from-gray-700 to-gray-750 rounded-xl p-4">
+        <div className="bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl p-4">
           <h3 className="font-bold mb-3 flex items-center gap-2">
             <Info size={18} className="text-blue-400" />
             City Overview
