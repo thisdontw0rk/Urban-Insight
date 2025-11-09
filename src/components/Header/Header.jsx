@@ -1,7 +1,8 @@
 import React from "react";
-import { Menu, X, Search, MapPin } from "lucide-react";
+import { Menu, X, MapPin } from "lucide-react";
+import SearchBar from "./SearchBar";
 
-const Header = ({ sidebarOpen, onToggleSidebar }) => {
+const Header = ({ sidebarOpen, onToggleSidebar, onCommunitySelect, mapInstance, activeLayer }) => {
   return (
     <header className="bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg z-20">
       <div className="px-4 py-4 flex items-center justify-between">
@@ -24,14 +25,7 @@ const Header = ({ sidebarOpen, onToggleSidebar }) => {
 
         {/* Right section: search bar */}
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center bg-white/10 backdrop-blur-sm rounded-lg px-4 py-2 gap-2">
-            <Search size={18} className="text-white" />
-            <input
-              type="text"
-              placeholder="Search neighborhoods..."
-              className="bg-transparent border-none outline-none text-white placeholder-blue-200 w-64"
-            />
-          </div>
+          <SearchBar onCommunitySelect={onCommunitySelect} mapInstance={mapInstance} activeLayer={activeLayer} />
         </div>
       </div>
     </header>

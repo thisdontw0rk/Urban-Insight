@@ -26,22 +26,31 @@ const MapContainer = ({ activeLayer }) => {
 
   // Initialize map
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current) {
+      console.warn('MapContainer: mapRef.current is null');
+      return;
+    }
 
     // Create map if it doesn't exist
     if (!mapInstanceRef.current) {
-      mapInstanceRef.current = L.map(mapRef.current, {
-        center: [51.0447, -114.0719], // Calgary coordinates
-        zoom: 11,
-        zoomControl: true,
-        scrollWheelZoom: true,
-      });
+      try {
+        console.log('MapContainer: Initializing Leaflet map...');
+        mapInstanceRef.current = L.map(mapRef.current, {
+          center: [51.0447, -114.0719], // Calgary coordinates
+          zoom: 11,
+          zoomControl: true,
+          scrollWheelZoom: true,
+        });
 
-      // Add OpenStreetMap tiles
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(mapInstanceRef.current);
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19,
+        }).addTo(mapInstanceRef.current);
+        console.log('MapContainer: Map initialized successfully');
+      } catch (error) {
+        console.error('MapContainer: Error initializing map:', error);
+      }
     }
 
     return () => {
@@ -60,68 +69,145 @@ const MapContainer = ({ activeLayer }) => {
     const loadLayer = async () => {
       setIsLoading(true);
       
-      // Remove existing GeoJSON layer
+      // Remove existing GeoJSON layer to ensure only one layer is visible at a time
       if (geoJsonLayerRef.current) {
-        mapInstanceRef.current.removeLayer(geoJsonLayerRef.current);
+        try {
+          mapInstanceRef.current.removeLayer(geoJsonLayerRef.current);
+        } catch (error) {
+          console.warn('Error removing previous layer:', error);
+        }
         geoJsonLayerRef.current = null;
       }
 
-      // Get file path for active layer
-      const filePath = layerFileMap[activeLayer];
-      
-      if (!filePath) {
-        console.warn(`No GeoJSON file mapped for layer: ${activeLayer}`);
-        setIsLoading(false);
-        return;
+      // Special handling for LRT layer - combine lines and stops
+      if (activeLayer === 'lrt') {
+        const [linesData, stopsData] = await Promise.all([
+          loadGeoJSON('/data/lrt-lines.json'),
+          loadGeoJSON('/data/lrt-stops.json')
+        ]);
+
+        if (!linesData && !stopsData) {
+          setIsLoading(false);
+          return;
+        }
+
+        // Combine features from both datasets
+        const combinedFeatures = [];
+        if (linesData?.features) combinedFeatures.push(...linesData.features);
+        if (stopsData?.features) combinedFeatures.push(...stopsData.features);
+
+        const combinedGeoJSON = {
+          type: 'FeatureCollection',
+          features: combinedFeatures
+        };
+
+        // Create GeoJSON layer with styling and popups
+        geoJsonLayerRef.current = L.geoJSON(combinedGeoJSON, {
+          style: (feature) => {
+            // Determine if it's a line or stop based on geometry type
+            const isStop = feature.geometry?.type === 'Point' || feature.geometry?.type === 'MultiPoint';
+            return getLayerStyle(isStop ? 'lrt_stops' : 'lrt_lines', feature);
+          },
+          pointToLayer: (feature, latlng) => {
+            // For point features (stops), create a circle marker
+            const style = getLayerStyle('lrt_stops', feature);
+            return L.circleMarker(latlng, {
+              radius: style.radius || 6,
+              fillColor: style.fillColor || style.color,
+              color: style.color,
+              weight: style.weight || 1,
+              opacity: style.opacity || 1,
+              fillOpacity: style.fillOpacity || 1,
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            // Add popup with feature properties
+            if (feature.properties) {
+              const isStop = feature.geometry?.type === 'Point' || feature.geometry?.type === 'MultiPoint';
+              const popupContent = createPopupContent(feature, isStop ? 'lrt_stops' : 'lrt_lines');
+              layer.bindPopup(popupContent);
+            }
+
+            // Add hover effects
+            layer.on({
+              mouseover: (e) => {
+                const layer = e.target;
+                layer.setStyle({
+                  weight: 4,
+                  opacity: 1,
+                });
+                if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                  layer.bringToFront();
+                }
+              },
+              mouseout: (e) => {
+                geoJsonLayerRef.current?.resetStyle(e.target);
+              },
+            });
+          },
+        }).addTo(mapInstanceRef.current);
+      } else {
+        // Standard single layer loading
+        const filePath = layerFileMap[activeLayer];
+        
+        if (!filePath) {
+          console.warn(`No GeoJSON file mapped for layer: ${activeLayer}`);
+          setIsLoading(false);
+          return;
+        }
+
+        // Load GeoJSON data
+        const geoJsonData = await loadGeoJSON(filePath);
+        
+        if (!geoJsonData) {
+          setIsLoading(false);
+          return;
+        }
+
+        // Create GeoJSON layer with styling and popups
+        geoJsonLayerRef.current = L.geoJSON(geoJsonData, {
+          style: (feature) => getLayerStyle(activeLayer, feature),
+          pointToLayer: (feature, latlng) => {
+            // For point features, create a circle marker
+            const style = getLayerStyle(activeLayer, feature);
+            return L.circleMarker(latlng, {
+              radius: style.radius || 8,
+              fillColor: style.fillColor || style.color,
+              color: style.color,
+              weight: style.weight || 1,
+              opacity: style.opacity || 1,
+              fillOpacity: style.fillOpacity || 1,
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            // Add popup with feature properties
+            if (feature.properties) {
+              const popupContent = createPopupContent(feature, activeLayer);
+              layer.bindPopup(popupContent);
+            }
+
+            // Add hover effects
+            layer.on({
+              mouseover: (e) => {
+                const layer = e.target;
+                layer.setStyle({
+                  weight: 4,
+                  opacity: 1,
+                });
+                if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                  layer.bringToFront();
+                }
+              },
+              mouseout: (e) => {
+                geoJsonLayerRef.current?.resetStyle(e.target);
+              },
+            });
+          },
+        }).addTo(mapInstanceRef.current);
       }
-
-      // Load GeoJSON data
-      const geoJsonData = await loadGeoJSON(filePath);
-      
-      if (!geoJsonData) {
-        setIsLoading(false);
-        return;
-      }
-
-      // Create GeoJSON layer with styling and popups
-      geoJsonLayerRef.current = L.geoJSON(geoJsonData, {
-        style: (feature) => getLayerStyle(activeLayer, feature),
-        pointToLayer: (feature, latlng) => {
-          // For point features, create a circle marker
-          const style = getLayerStyle(activeLayer, feature);
-          return L.circleMarker(latlng, {
-            radius: 8,
-            ...style,
-          });
-        },
-        onEachFeature: (feature, layer) => {
-          // Add popup with feature properties
-          if (feature.properties) {
-            const popupContent = createPopupContent(feature);
-            layer.bindPopup(popupContent);
-          }
-
-          // Add hover effects
-          layer.on({
-            mouseover: (e) => {
-              const layer = e.target;
-              layer.setStyle({
-                weight: 4,
-                opacity: 1,
-              });
-              if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
-                layer.bringToFront();
-              }
-            },
-            mouseout: (e) => {
-              geoJsonLayerRef.current?.resetStyle(e.target);
-            },
-          });
-        },
-      }).addTo(mapInstanceRef.current);
 
       // Fit map to bounds of GeoJSON data
-      if (geoJsonLayerRef.current.getBounds().isValid()) {
+      if (geoJsonLayerRef.current && geoJsonLayerRef.current.getBounds().isValid()) {
         mapInstanceRef.current.fitBounds(geoJsonLayerRef.current.getBounds(), {
           padding: [50, 50],
           maxZoom: 15,
@@ -129,9 +215,22 @@ const MapContainer = ({ activeLayer }) => {
       }
 
       setIsLoading(false);
+      console.log(`Layer "${activeLayer}" loaded and displayed`);
     };
 
     loadLayer();
+    
+    // Cleanup function to remove layer when component unmounts or layer changes
+    return () => {
+      if (geoJsonLayerRef.current) {
+        try {
+          mapInstanceRef.current.removeLayer(geoJsonLayerRef.current);
+          geoJsonLayerRef.current = null;
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    };
   }, [activeLayer]);
 
   return (

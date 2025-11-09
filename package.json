@@ -13,6 +13,7 @@
     "@tailwindcss/vite": "^4.1.17",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.553.0",
+    "ol": "^10.7.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-leaflet": "^5.0.0",
